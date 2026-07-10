@@ -138,8 +138,15 @@ PLIST
 # Firma ad-hoc: senza firma macOS moderno rifiuta di lanciare il bundle.
 codesign --force --deep --sign - "$APP"
 
-echo "Creato: $APP"
+# Installa in /Applications come UNICA copia: evita l'ambiguità di avere due
+# LocalAi.app registrate in LaunchServices (progetto vs /Applications).
+INSTALLED="/Applications/LocalAi.app"
+echo "Installo in $INSTALLED…"
+rm -rf "$INSTALLED"
+mv "$APP" "$INSTALLED"   # sposta: nessuna copia residua nella cartella del progetto
+
+echo "Creato: $INSTALLED"
 
 if [[ "$MODE" != "build" ]]; then
-  open "$APP"
+  open "$INSTALLED"
 fi
