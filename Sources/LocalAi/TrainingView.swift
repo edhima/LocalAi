@@ -15,20 +15,19 @@ struct TrainingView: View {
     @Bindable var imageGen: ImageGenManager
     @State private var convertSource = ""
     @State private var convertBits = 4
-    @State private var mode = 0   // 0 = testo (LLM), 1 = immagini (LoRA SDXL)
 
     var body: some View {
         HSplitView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Picker("", selection: $mode) {
+                    Picker("", selection: $manager.windowMode) {
                         Text("testo (LLM)").tag(0)
                         Text("immagini (LoRA SDXL)").tag(1)
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
 
-                    if mode == 0 {
+                    if manager.windowMode == 0 {
                         toolsSection
                         Divider()
                         dataSection
@@ -327,18 +326,18 @@ struct TrainingView: View {
     private var logConsole: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(mode == 1
+                Text(manager.windowMode == 1
                     ? (imageTrainer.isBusy ? "✻ training immagini…" : "log immagini")
                     : (manager.isBusy ? "✻ \(manager.busyLabel)" : "log"))
                     .font(Theme.mono(11, weight: .semibold))
-                    .foregroundStyle((mode == 1 ? imageTrainer.isBusy : manager.isBusy) ? Theme.accent : Theme.dim)
+                    .foregroundStyle((manager.windowMode == 1 ? imageTrainer.isBusy : manager.isBusy) ? Theme.accent : Theme.dim)
                 Spacer()
             }
             .padding(10)
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    Text(mode == 1
+                    Text(manager.windowMode == 1
                         ? (imageTrainer.log.isEmpty ? "(il log del training immagini appare qui)" : imageTrainer.log)
                         : (manager.log.isEmpty ? "(il log di preparazione e training appare qui)" : manager.log))
                         .font(Theme.mono(10))

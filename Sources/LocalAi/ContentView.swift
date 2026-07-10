@@ -12,10 +12,11 @@ struct ContentView: View {
     var store: ModelStore
     var rag: RAGManager
     var imageGen: ImageGenManager
+    var training: TrainingManager
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(engine: engine, store: store, imageGen: imageGen)
+            SidebarView(engine: engine, store: store, imageGen: imageGen, training: training)
                 .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 400)
         } detail: {
             ChatView(engine: engine, rag: rag, imageGen: imageGen)
@@ -30,6 +31,8 @@ struct SidebarView: View {
     @Bindable var engine: QwenEngine
     var store: ModelStore
     @Bindable var imageGen: ImageGenManager
+    @Bindable var training: TrainingManager
+    @Environment(\.openWindow) private var openWindow
     @State private var modelToDelete: CatalogModel?
     @State private var newModelID = ""
     @State private var mountError: String?
@@ -125,6 +128,16 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.borderless)
                 .help("Identifica un file .safetensors: checkpoint o LoRA, architettura, parametri")
+                Button {
+                    training.windowMode = 0
+                    openWindow(id: "training")
+                } label: {
+                    Label("training LoRA (testo)…", systemImage: "graduationcap")
+                        .font(Theme.mono(11))
+                        .foregroundStyle(Theme.accent)
+                }
+                .buttonStyle(.borderless)
+                .help("Fine-tuning LoRA di un modello linguistico sui tuoi dati")
             } header: {
                 Text("altri modelli")
                     .font(Theme.mono(11, weight: .semibold))
@@ -133,6 +146,16 @@ struct SidebarView: View {
 
             Section {
                 ImageGenRow(imageGen: imageGen)
+                Button {
+                    training.windowMode = 1
+                    openWindow(id: "training")
+                } label: {
+                    Label("training LoRA (immagini)…", systemImage: "graduationcap")
+                        .font(Theme.mono(11))
+                        .foregroundStyle(Theme.accent)
+                }
+                .buttonStyle(.borderless)
+                .help("Addestra un LoRA SDXL con le tue immagini (stile DreamBooth)")
             } header: {
                 Text("modello immagine (SD/SDXL)")
                     .font(Theme.mono(11, weight: .semibold))

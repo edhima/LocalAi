@@ -26,7 +26,7 @@ struct LocalAiApp: App {
 
     var body: some Scene {
         WindowGroup("LocalAi") {
-            ContentView(engine: engine, store: store, rag: rag, imageGen: imageGen)
+            ContentView(engine: engine, store: store, rag: rag, imageGen: imageGen, training: training)
                 .frame(minWidth: 960, minHeight: 600)
                 .preferredColorScheme(.dark)
                 .tint(Theme.accent)

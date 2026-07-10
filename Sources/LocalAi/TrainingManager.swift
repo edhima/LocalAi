@@ -22,6 +22,8 @@ final class TrainingManager {
     private(set) var toolsReady = false
     private(set) var isBusy = false
     private(set) var busyLabel = ""
+    /// Modalità mostrata dalla finestra Training: 0 = testo (LLM), 1 = immagini (LoRA SDXL).
+    var windowMode = 0
 
     var rawFiles: [URL] = []
     private(set) var trainCount = 0
