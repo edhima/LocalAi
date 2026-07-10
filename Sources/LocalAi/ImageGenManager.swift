@@ -193,7 +193,13 @@ final class ImageGenManager {
         // valida col referto dell'ispettore: accettiamo solo checkpoint SD/SDXL
         let report = SafetensorsInspector.inspect(url: checkpoint)
         guard report.contains("Stable Diffusion") else {
-            state = .failed("non è un checkpoint Stable Diffusion/SDXL: \(checkpoint.lastPathComponent)")
+            // Errore guidato: se è un LoRA, spiega come si usa davvero.
+            if report.contains("LoRA") {
+                state = .failed(
+                    "\(checkpoint.lastPathComponent) è un LoRA, non un checkpoint. Monta il checkpoint base (es. eridon_v03.safetensors) e applica il LoRA dai parametri (icona regolatori).")
+            } else {
+                state = .failed("non è un checkpoint Stable Diffusion/SDXL: \(checkpoint.lastPathComponent)")
+            }
             return
         }
         let isXL = report.contains("XL")

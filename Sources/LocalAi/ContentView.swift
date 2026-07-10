@@ -511,11 +511,63 @@ struct ImageGenParamsPane: View {
                 }
             }
 
+            Divider()
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("LoRA (add-on sul checkpoint)")
+                    .font(Theme.mono(11, weight: .semibold))
+                if let lora = imageGen.loraURL {
+                    HStack(spacing: 6) {
+                        Text("⏺").foregroundStyle(Theme.green)
+                        Text(lora.deletingLastPathComponent().lastPathComponent)
+                            .font(Theme.mono(10))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        Button("togli") { imageGen.remount(lora: nil) }
+                            .font(Theme.mono(10))
+                    }
+                    Text("scala: \(imageGen.loraScale, specifier: "%.2f")")
+                        .font(Theme.mono(10))
+                    Slider(value: $imageGen.loraScale, in: 0...1.5, step: 0.05)
+                        .tint(Theme.accent)
+                    Text("cambia la scala e rimonta per applicarla")
+                        .font(Theme.mono(9))
+                        .foregroundStyle(Theme.dim)
+                    Button("rimonta con scala \(imageGen.loraScale, specifier: "%.2f")") {
+                        imageGen.remount(lora: lora)
+                    }
+                    .font(Theme.mono(10))
+                } else {
+                    Button("applica un LoRA…") { pickLora() }
+                        .font(Theme.mono(11))
+                    Text("un pytorch_lora_weights.safetensors da LocalAiTraining/loras/ o ComfyUI")
+                        .font(Theme.mono(9))
+                        .foregroundStyle(Theme.dim)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             Text("i parametri valgono da subito, per la prossima /img")
                 .font(Theme.mono(10))
                 .foregroundStyle(Theme.dim)
         }
         .padding(16)
         .frame(width: 340)
+    }
+
+    private func pickLora() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Scegli un file LoRA (.safetensors) da applicare sul checkpoint montato"
+        if let loras = try? FileManager.default.url(
+            for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false) {
+            panel.directoryURL = loras.appendingPathComponent("LocalAiTraining/loras")
+        }
+        if panel.runModal() == .OK, let url = panel.url {
+            imageGen.remount(lora: url)
+        }
     }
 }
