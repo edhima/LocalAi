@@ -189,8 +189,8 @@ final class ImageGenManager {
     }
 
     private func actuallyMount(_ checkpoint: URL) {
-        unmount()
-        // valida col referto dell'ispettore: accettiamo solo checkpoint SD/SDXL
+        // Valida PRIMA di smontare il modello corrente: un file sbagliato
+        // non deve farti perdere quello già montato.
         let report = SafetensorsInspector.inspect(url: checkpoint)
         guard report.contains("Stable Diffusion") else {
             // Errore guidato: se è un LoRA, spiega come si usa davvero.
@@ -205,9 +205,35 @@ final class ImageGenManager {
         let isXL = report.contains("XL")
         Self.writeWorkerScript()
         modelURL = checkpoint
+        mountedArch = isXL ? "xl" : "sd"
+        if width == 0 || height == 0 {
+            width = isXL ? 1024 : 512
+            height = isXL ? 1024 : 512
+        }
         state = .loadingModel
         appendLog("✻ carico \(checkpoint.lastPathComponent) (\(isXL ? "SDXL" : "SD"))…\n")
 
+        // Smonta il worker precedente e ASPETTA che rilasci la memoria GPU
+        // prima di avviarne uno nuovo: altrimenti due checkpoint insieme in
+        // memoria fanno uccidere il nuovo worker durante il caricamento
+        // (è il caso tipico del rimontaggio per applicare un LoRA).
+        let old = worker
+        worker = nil
+        workerStdin = nil
+        Task.detached {
+            if let old {
+                old.terminate()
+                old.waitUntilExit()
+            }
+            await MainActor.run { [weak self] in
+                self?.launchWorker(checkpoint: checkpoint, isXL: isXL)
+            }
+        }
+    }
+
+    private func launchWorker(checkpoint: URL, isXL: Bool) {
+        // se nel frattempo l'utente ha smontato, non avviare nulla
+        guard case .loadingModel = state else { return }
         guard let embedded = TrainingManager.embeddedPython else {
             state = .failed("runtime Python integrato assente")
             return
@@ -283,7 +309,8 @@ final class ImageGenManager {
         modelURL = nil
         mountedArch = nil
         pendingCompletion = nil
-        if markerOK { state = .idle }
+        // Stack nel bundle o marker esterno → torna a "pronto per montare".
+        if Self.stackInBundle || markerOK { state = .idle }
     }
 
     // MARK: - Generazione
