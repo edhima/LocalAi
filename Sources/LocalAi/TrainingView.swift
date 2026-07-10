@@ -11,22 +11,36 @@ import UniformTypeIdentifiers
 struct TrainingView: View {
     @Bindable var manager: TrainingManager
     @Bindable var engine: QwenEngine
+    @Bindable var imageTrainer: ImageTrainingManager
+    @Bindable var imageGen: ImageGenManager
     @State private var convertSource = ""
     @State private var convertBits = 4
+    @State private var mode = 0   // 0 = testo (LLM), 1 = immagini (LoRA SDXL)
 
     var body: some View {
         HSplitView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    toolsSection
-                    Divider()
-                    dataSection
-                    Divider()
-                    trainingSection
-                    Divider()
-                    fuseSection
-                    Divider()
-                    exportSection
+                    Picker("", selection: $mode) {
+                        Text("testo (LLM)").tag(0)
+                        Text("immagini (LoRA SDXL)").tag(1)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+
+                    if mode == 0 {
+                        toolsSection
+                        Divider()
+                        dataSection
+                        Divider()
+                        trainingSection
+                        Divider()
+                        fuseSection
+                        Divider()
+                        exportSection
+                    } else {
+                        ImageTrainingPane(imageTrainer: imageTrainer, imageGen: imageGen)
+                    }
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -313,16 +327,20 @@ struct TrainingView: View {
     private var logConsole: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(manager.isBusy ? "✻ \(manager.busyLabel)" : "log")
+                Text(mode == 1
+                    ? (imageTrainer.isBusy ? "✻ training immagini…" : "log immagini")
+                    : (manager.isBusy ? "✻ \(manager.busyLabel)" : "log"))
                     .font(Theme.mono(11, weight: .semibold))
-                    .foregroundStyle(manager.isBusy ? Theme.accent : Theme.dim)
+                    .foregroundStyle((mode == 1 ? imageTrainer.isBusy : manager.isBusy) ? Theme.accent : Theme.dim)
                 Spacer()
             }
             .padding(10)
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    Text(manager.log.isEmpty ? "(il log di preparazione e training appare qui)" : manager.log)
+                    Text(mode == 1
+                        ? (imageTrainer.log.isEmpty ? "(il log del training immagini appare qui)" : imageTrainer.log)
+                        : (manager.log.isEmpty ? "(il log di preparazione e training appare qui)" : manager.log))
                         .font(Theme.mono(10))
                         .foregroundStyle(Theme.secondary)
                         .textSelection(.enabled)
@@ -331,6 +349,9 @@ struct TrainingView: View {
                         .id("logEnd")
                 }
                 .onChange(of: manager.log) {
+                    proxy.scrollTo("logEnd", anchor: .bottom)
+                }
+                .onChange(of: imageTrainer.log) {
                     proxy.scrollTo("logEnd", anchor: .bottom)
                 }
             }
@@ -368,6 +389,178 @@ struct TrainingView: View {
         panel.message = "Scegli i file di partenza per il dataset di training"
         if panel.runModal() == .OK {
             manager.addRawFiles(panel.urls)
+        }
+    }
+}
+
+// MARK: - Training immagini (LoRA SDXL, stile DreamBooth)
+
+struct ImageTrainingPane: View {
+    @Bindable var imageTrainer: ImageTrainingManager
+    @Bindable var imageGen: ImageGenManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("1 · checkpoint base (SDXL)")
+                    .font(Theme.mono(12, weight: .semibold))
+                HStack(spacing: 8) {
+                    Text(imageTrainer.baseCheckpoint?.lastPathComponent ?? "nessuno")
+                        .font(Theme.mono(11))
+                        .foregroundStyle(imageTrainer.baseCheckpoint != nil ? Theme.green : Theme.dim)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                    Button("scegli…") { pickCheckpoint() }
+                        .font(Theme.mono(10))
+                        .disabled(imageTrainer.isBusy)
+                    if let mounted = imageGen.modelURL {
+                        Button("usa quello montato") {
+                            imageTrainer.baseCheckpoint = mounted
+                        }
+                        .font(Theme.mono(10))
+                        .disabled(imageTrainer.isBusy)
+                    }
+                }
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("2 · dataset e trigger")
+                    .font(Theme.mono(12, weight: .semibold))
+                HStack(spacing: 8) {
+                    Button("cartella immagini…") { pickDataset() }
+                        .font(Theme.mono(10))
+                        .disabled(imageTrainer.isBusy)
+                    Text(imageTrainer.datasetDir != nil
+                        ? "\(imageTrainer.datasetImageCount) immagini in \(imageTrainer.datasetDir!.lastPathComponent)/"
+                        : "png · jpg · webp — 10–30 immagini bastano")
+                        .font(Theme.mono(10))
+                        .foregroundStyle(imageTrainer.datasetImageCount > 0 ? Theme.green : Theme.dim)
+                }
+                TextField("frase trigger, es. a photo of zxq person", text: $imageTrainer.triggerPrompt)
+                    .textFieldStyle(.plain)
+                    .font(Theme.mono(11))
+                    .padding(6)
+                    .background(Theme.inputBackground, in: RoundedRectangle(cornerRadius: 6))
+                Text("usa una parola inventata (zxq…) come nome del soggetto/stile: poi la userai nei prompt /img")
+                    .font(Theme.mono(9))
+                    .foregroundStyle(Theme.dim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("3 · parametri e avvio")
+                    .font(Theme.mono(12, weight: .semibold))
+                Text("passi: \(Int(imageTrainer.steps)) · rank: \(Int(imageTrainer.rank)) · \(imageTrainer.resolution)px")
+                    .font(Theme.mono(11))
+                Slider(value: $imageTrainer.steps, in: 100...2000, step: 50).tint(Theme.accent)
+                Slider(value: $imageTrainer.rank, in: 4...32, step: 4).tint(Theme.accent)
+                Picker("", selection: $imageTrainer.resolution) {
+                    Text("512 (veloce)").tag(512)
+                    Text("768").tag(768)
+                    Text("1024 (lento)").tag(1024)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                Text("tempi misurati su questo Mac: ~10 min per 800 passi a 512px; 1024px è ~4× più lento")
+                    .font(Theme.mono(9))
+                    .foregroundStyle(Theme.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 10) {
+                    Button("avvia training") { imageTrainer.startTraining() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.accent)
+                        .font(Theme.mono(11))
+                        .disabled(imageTrainer.isBusy)
+                    if imageTrainer.isBusy {
+                        Button("interrompi") { imageTrainer.cancel() }
+                            .font(Theme.mono(11))
+                    }
+                }
+
+                switch imageTrainer.state {
+                case .preparingTools:
+                    progressRow("preparo gli strumenti…", nil)
+                case .preparingBase:
+                    progressRow("converto la base in diffusers (una tantum)…", nil)
+                case .training(let step, let total):
+                    progressRow("training… \(step)/\(total)", Double(step) / Double(max(total, 1)))
+                case .failed(let message):
+                    Text("✗ \(message)")
+                        .font(Theme.mono(10))
+                        .foregroundStyle(Theme.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                case .done(let path):
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("✓ LoRA pronto")
+                            .font(Theme.mono(11, weight: .semibold))
+                            .foregroundStyle(Theme.green)
+                        Text(path)
+                            .font(Theme.mono(9))
+                            .foregroundStyle(Theme.dim)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        HStack(spacing: 10) {
+                            if imageGen.modelURL != nil, let lora = imageTrainer.lastLoraURL {
+                                Button("monta con questo LoRA e genera") {
+                                    imageGen.remount(lora: lora)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(Theme.green)
+                                .font(Theme.mono(10))
+                            }
+                            Button("Finder") {
+                                if let lora = imageTrainer.lastLoraURL {
+                                    NSWorkspace.shared.activateFileViewerSelecting([lora])
+                                }
+                            }
+                            .font(Theme.mono(10))
+                        }
+                        Text("il file è compatibile anche con ComfyUI (models/loras/)")
+                            .font(Theme.mono(9))
+                            .foregroundStyle(Theme.dim)
+                    }
+                case .idle:
+                    EmptyView()
+                }
+            }
+        }
+    }
+
+    private func progressRow(_ label: String, _ fraction: Double?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text(label).font(Theme.mono(10)).foregroundStyle(Theme.accent)
+            }
+            if let fraction {
+                ProgressView(value: fraction).tint(Theme.accent)
+            }
+        }
+    }
+
+    private func pickCheckpoint() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.message = "Scegli il checkpoint SDXL base (.safetensors)"
+        if panel.runModal() == .OK, let url = panel.url {
+            imageTrainer.baseCheckpoint = url
+        }
+    }
+
+    private func pickDataset() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.message = "Scegli la cartella con le immagini di training"
+        if panel.runModal() == .OK, let url = panel.url {
+            imageTrainer.setDataset(url)
         }
     }
 }

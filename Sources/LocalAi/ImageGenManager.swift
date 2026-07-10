@@ -35,6 +35,9 @@ final class ImageGenManager {
     private(set) var mountedArch: String?
     /// Seed dell'ultima generazione riuscita (per riprodurla).
     private(set) var lastSeed: Int?
+    /// LoRA applicato al montaggio corrente (fuso nella pipeline).
+    private(set) var loraURL: URL?
+    var loraScale: Double = 0.8
 
     // Parametri di generazione (regolabili dal pannello in sidebar)
     var steps: Double = 25
@@ -156,13 +159,21 @@ final class ImageGenManager {
     // MARK: - Montaggio modello e worker
 
     /// Monta un checkpoint SD/SDXL single-file e avvia il worker (carica la pipeline).
-    func mount(checkpoint: URL) {
+    /// `lora`: opzionale, viene fuso nella pipeline con `loraScale`.
+    func mount(checkpoint: URL, lora: URL? = nil) {
         guard !isBusy else { return }
         if case .toolsMissing = state {
             appendLog("✗ installa prima lo stack immagini\n")
             return
         }
+        loraURL = lora
         actuallyMount(checkpoint)
+    }
+
+    /// Rimonta il checkpoint corrente applicando (o togliendo) un LoRA.
+    func remount(lora: URL?) {
+        guard let checkpoint = modelURL else { return }
+        mount(checkpoint: checkpoint, lora: lora)
     }
 
     private func actuallyMount(_ checkpoint: URL) {
@@ -185,7 +196,12 @@ final class ImageGenManager {
         }
         let process = Process()
         process.executableURL = embedded
-        process.arguments = [Self.workerScript.path, checkpoint.path, isXL ? "xl" : "sd"]
+        var arguments = [Self.workerScript.path, checkpoint.path, isXL ? "xl" : "sd"]
+        if let lora = loraURL {
+            arguments += [lora.path, String(loraScale)]
+            appendLog("  + LoRA: \(lora.lastPathComponent) (scala \(loraScale))\n")
+        }
+        process.arguments = arguments
         process.currentDirectoryURL = Self.supportDir
         var environment = ProcessInfo.processInfo.environment
         environment["PYTHONPATH"] = Self.packagesDir.path
@@ -387,8 +403,13 @@ final class ImageGenManager {
         )
 
         checkpoint, arch = sys.argv[1], sys.argv[2]
+        lora_path = sys.argv[3] if len(sys.argv) > 3 else None
+        lora_scale = float(sys.argv[4]) if len(sys.argv) > 4 else 0.8
         cls = StableDiffusionXLPipeline if arch == "xl" else StableDiffusionPipeline
         pipe = cls.from_single_file(checkpoint, torch_dtype=torch.float16, use_safetensors=True)
+        if lora_path:
+            pipe.load_lora_weights(lora_path)
+            pipe.fuse_lora(lora_scale=lora_scale)
         # euler_ancestral: lo scheduler con cui questi checkpoint sono usati in ComfyUI
         pipe.scheduler = EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
         pipe = pipe.to("mps")

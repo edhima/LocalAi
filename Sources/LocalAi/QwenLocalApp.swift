@@ -13,6 +13,7 @@ struct LocalAiApp: App {
     @State private var training = TrainingManager()
     @State private var rag = RAGManager()
     @State private var imageGen = ImageGenManager()
+    @State private var imageTrainer = ImageTrainingManager()
 
     init() {
         // Lanciata come binario nudo (senza bundle .app) serve la activation
@@ -32,7 +33,7 @@ struct LocalAiApp: App {
         }
 
         Window("Training", id: "training") {
-            TrainingView(manager: training, engine: engine)
+            TrainingView(manager: training, engine: engine, imageTrainer: imageTrainer, imageGen: imageGen)
                 .frame(minWidth: 780, minHeight: 560)
                 .preferredColorScheme(.dark)
                 .tint(Theme.accent)
