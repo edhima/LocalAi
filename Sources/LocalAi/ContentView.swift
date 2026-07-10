@@ -316,6 +316,7 @@ struct ModelRow: View {
 
 struct ImageGenRow: View {
     @Bindable var imageGen: ImageGenManager
+    @State private var showParams = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -361,13 +362,23 @@ struct ImageGenRow: View {
                         .truncationMode(.middle)
                     Spacer()
                     Button {
+                        showParams.toggle()
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Parametri di generazione: passi, dimensioni, guidance, seed…")
+                    .popover(isPresented: $showParams, arrowEdge: .trailing) {
+                        ImageGenParamsPane(imageGen: imageGen)
+                    }
+                    Button {
                         imageGen.unmount()
                     } label: {
                         Image(systemName: "eject")
                     }
                     .buttonStyle(.borderless)
                 }
-                Text("pronto — scrivi /img <descrizione> in chat")
+                Text("pronto — scrivi /img <descrizione> in chat · \(imageGen.width)×\(imageGen.height) · \(Int(imageGen.steps)) passi")
                     .font(Theme.mono(10))
                     .foregroundStyle(Theme.green)
             case .generating(let step, let total):
@@ -405,5 +416,83 @@ struct ImageGenRow: View {
         if panel.runModal() == .OK, let url = panel.url {
             imageGen.mount(checkpoint: url)
         }
+    }
+}
+
+/// Parametri di generazione del modello immagine montato.
+struct ImageGenParamsPane: View {
+    @Bindable var imageGen: ImageGenManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("parametri generazione (\(imageGen.mountedArch == "sd" ? "SD" : "SDXL"))")
+                .font(Theme.mono(13, weight: .semibold))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("passi: \(Int(imageGen.steps))  ·  guidance: \(imageGen.guidance, specifier: "%.1f")")
+                    .font(Theme.mono(11))
+                Slider(value: $imageGen.steps, in: 4...60, step: 1).tint(Theme.accent)
+                Slider(value: $imageGen.guidance, in: 1...15, step: 0.5).tint(Theme.accent)
+                Text("più passi = più dettaglio ma più lento · guidance alta = più fedele al prompt")
+                    .font(Theme.mono(9))
+                    .foregroundStyle(Theme.dim)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("dimensioni: \(imageGen.width) × \(imageGen.height)")
+                    .font(Theme.mono(11))
+                Picker("", selection: Binding(
+                    get: { "\(imageGen.width)x\(imageGen.height)" },
+                    set: { value in
+                        if let preset = imageGen.sizePresets.first(where: { "\($0.width)x\($0.height)" == value }) {
+                            imageGen.width = preset.width
+                            imageGen.height = preset.height
+                        }
+                    }
+                )) {
+                    ForEach(imageGen.sizePresets, id: \.label) { preset in
+                        Text(preset.label)
+                            .font(Theme.mono(11))
+                            .tag("\(preset.width)x\(preset.height)")
+                    }
+                }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
+                .font(Theme.mono(11))
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("negative prompt (cosa evitare)")
+                    .font(Theme.mono(11))
+                TextField("es. blurry, low quality, deformed…", text: $imageGen.negativePrompt)
+                    .textFieldStyle(.plain)
+                    .font(Theme.mono(11))
+                    .padding(6)
+                    .background(Theme.inputBackground, in: RoundedRectangle(cornerRadius: 6))
+            }
+
+            HStack(spacing: 8) {
+                Text("seed")
+                    .font(Theme.mono(11))
+                TextField("vuoto = casuale", text: $imageGen.seedText)
+                    .textFieldStyle(.plain)
+                    .font(Theme.mono(11))
+                    .padding(6)
+                    .frame(width: 120)
+                    .background(Theme.inputBackground, in: RoundedRectangle(cornerRadius: 6))
+                if let last = imageGen.lastSeed {
+                    Button("riusa ultimo (\(last))") {
+                        imageGen.seedText = String(last)
+                    }
+                    .font(Theme.mono(10))
+                }
+            }
+
+            Text("i parametri valgono da subito, per la prossima /img")
+                .font(Theme.mono(10))
+                .foregroundStyle(Theme.dim)
+        }
+        .padding(16)
+        .frame(width: 340)
     }
 }

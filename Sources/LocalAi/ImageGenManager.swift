@@ -31,6 +31,38 @@ final class ImageGenManager {
     private(set) var state: State = .toolsMissing
     private(set) var modelURL: URL?
     private(set) var log = ""
+    /// Architettura del checkpoint montato: "xl" o "sd" (guida i preset dimensioni).
+    private(set) var mountedArch: String?
+    /// Seed dell'ultima generazione riuscita (per riprodurla).
+    private(set) var lastSeed: Int?
+
+    // Parametri di generazione (regolabili dal pannello in sidebar)
+    var steps: Double = 25
+    var guidance: Double = 7.0
+    var width = 1024
+    var height = 1024
+    var negativePrompt = ""
+    /// Vuoto = seed casuale a ogni generazione.
+    var seedText = ""
+
+    /// Preset di dimensioni adatti all'architettura montata.
+    var sizePresets: [(label: String, width: Int, height: Int)] {
+        if mountedArch == "sd" {
+            return [
+                ("512 × 512", 512, 512),
+                ("768 × 512 (orizz.)", 768, 512),
+                ("512 × 768 (vert.)", 512, 768),
+                ("768 × 768", 768, 768),
+            ]
+        }
+        return [
+            ("1024 × 1024", 1024, 1024),
+            ("1152 × 896 (orizz.)", 1152, 896),
+            ("896 × 1152 (vert.)", 896, 1152),
+            ("1344 × 768 (16:9)", 1344, 768),
+            ("768 × 768 (veloce)", 768, 768),
+        ]
+    }
 
     private var worker: Process?
     private var workerStdin: FileHandle?
@@ -211,6 +243,7 @@ final class ImageGenManager {
         worker = nil
         workerStdin = nil
         modelURL = nil
+        mountedArch = nil
         pendingCompletion = nil
         if markerOK { state = .idle }
     }
@@ -235,7 +268,19 @@ final class ImageGenManager {
         pendingCompletion = completion
         state = .generating(step: 0, total: 0)
 
-        let request: [String: Any] = ["prompt": prompt, "out": output.path]
+        var request: [String: Any] = [
+            "prompt": prompt,
+            "out": output.path,
+            "steps": Int(steps),
+            "cfg": guidance,
+            "width": width,
+            "height": height,
+        ]
+        let negative = negativePrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !negative.isEmpty { request["negative"] = negative }
+        if let seed = Int(seedText.trimmingCharacters(in: .whitespaces)) {
+            request["seed"] = seed
+        }
         if let data = try? JSONSerialization.data(withJSONObject: request) {
             workerStdin.write(data)
             workerStdin.write("\n".data(using: .utf8)!)
@@ -277,6 +322,7 @@ final class ImageGenManager {
             state = .generating(step: step, total: total)
         case "done":
             if let path = message["out"] as? String, let model = modelURL {
+                lastSeed = message["seed"] as? Int
                 state = .ready(model: model.lastPathComponent)
                 pendingCompletion?(.success(URL(fileURLWithPath: path)))
                 pendingCompletion = nil
