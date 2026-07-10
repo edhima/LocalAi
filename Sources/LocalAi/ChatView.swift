@@ -867,9 +867,96 @@ struct SettingsPane: View {
             Text("le modifiche valgono dalla prossima “nuova chat”")
                 .font(Theme.mono(11))
                 .foregroundStyle(Theme.dim)
+
+            Divider()
+
+            DiskUsageView()
         }
         .padding(16)
         .frame(width: 340)
+    }
+}
+
+/// Trasparenza sui dati esterni all'app: cosa resta sul disco e come rimuoverlo.
+/// Lo stack (Python + torch + diffusers + mlx-lm) è nel bundle: cestinare
+/// LocalAi.app lo rimuove. Qui restano solo i DATI.
+struct DiskUsageView: View {
+    @State private var auxSize = "…"
+    @State private var confirmClean = false
+
+    /// Cache ausiliaria rigenerabile (basi convertite per il training immagini,
+    /// eventuali residui di vecchie installazioni). NON contiene modelli.
+    private static var auxDir: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("LocalAi", isDirectory: true)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("spazio su disco")
+                .font(Theme.mono(12, weight: .semibold))
+            Text("lo stack (Python, torch, diffusers, mlx-lm) è dentro l'app: cestinarla lo rimuove. Fuori restano solo i tuoi dati:")
+                .font(Theme.mono(10))
+                .foregroundStyle(Theme.dim)
+                .fixedSize(horizontal: false, vertical: true)
+
+            row("modelli scaricati", "~/.cache/huggingface/hub", "gestibili dalla sidebar")
+            row("progetti di training", "~/Documents/LocalAiTraining", nil)
+            row("immagini generate", "~/Documents/LocalAiImages", nil)
+
+            HStack(spacing: 8) {
+                Text("cache ausiliaria: \(auxSize)")
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.secondary)
+                Spacer()
+                Button("libera") { confirmClean = true }
+                    .font(Theme.mono(10))
+            }
+            Text("basi convertite per il training immagini — rigenerate al bisogno")
+                .font(Theme.mono(9))
+                .foregroundStyle(Theme.dim)
+        }
+        .onAppear { refresh() }
+        .confirmationDialog(
+            "Liberare la cache ausiliaria?",
+            isPresented: $confirmClean, titleVisibility: .visible
+        ) {
+            Button("Libera \(auxSize)", role: .destructive) {
+                try? FileManager.default.removeItem(at: Self.auxDir)
+                refresh()
+            }
+            Button("Annulla", role: .cancel) {}
+        } message: {
+            Text("Rimuove solo dati rigenerabili (basi convertite). Modelli, immagini e progetti restano intatti.")
+        }
+    }
+
+    private func row(_ title: String, _ path: String, _ note: String?) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("· \(title)")
+                .font(Theme.mono(10))
+                .foregroundStyle(Theme.secondary)
+            Text(path + (note.map { " — \($0)" } ?? ""))
+                .font(Theme.mono(9))
+                .foregroundStyle(Theme.dim)
+        }
+    }
+
+    private func refresh() {
+        let dir = Self.auxDir
+        DispatchQueue.global(qos: .utility).async {
+            var bytes: Int64 = 0
+            if let en = FileManager.default.enumerator(
+                at: dir, includingPropertiesForKeys: [.fileAllocatedSizeKey]) {
+                for case let url as URL in en {
+                    bytes += Int64((try? url.resourceValues(
+                        forKeys: [.fileAllocatedSizeKey]).fileAllocatedSize) ?? 0)
+                }
+            }
+            let text = bytes == 0 ? "vuota"
+                : ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+            DispatchQueue.main.async { auxSize = text }
+        }
     }
 }
 

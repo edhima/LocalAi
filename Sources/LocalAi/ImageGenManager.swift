@@ -89,9 +89,19 @@ final class ImageGenManager {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("LocalAi/imagegen", isDirectory: true)
     }
-    /// I pacchetti Python dello stack immagini (pip --target): nessun venv,
-    /// il worker usa il Python integrato nell'app + PYTHONPATH.
+    /// I pacchetti Python dello stack immagini (pip --target): fallback usato
+    /// SOLO dal binario di sviluppo, quando lo stack non è nel bundle.
     static var packagesDir: URL { supportDir.appendingPathComponent("packages", isDirectory: true) }
+
+    /// Vero se torch/diffusers sono già nel Python integrato del bundle
+    /// (build di produzione). In tal caso non serve alcun download on-demand.
+    static var stackInBundle: Bool {
+        guard let python = TrainingManager.embeddedPython else { return false }
+        // Resources/python/bin/python3 → Resources/python/lib/python3.12/site-packages/torch
+        let torch = python.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("lib/python3.12/site-packages/torch")
+        return FileManager.default.fileExists(atPath: torch.path)
+    }
     static var outputDir: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("LocalAiImages", isDirectory: true)
@@ -103,7 +113,9 @@ final class ImageGenManager {
     }
 
     func refreshEnvironment() {
-        if TrainingManager.embeddedPython != nil, markerOK {
+        // Stack nel bundle (produzione) → pronto subito, nessun download.
+        // Altrimenti (binario dev) → pronto solo se lo stack esterno è installato.
+        if Self.stackInBundle || (TrainingManager.embeddedPython != nil && markerOK) {
             if case .toolsMissing = state { state = .idle }
         } else if !isBusy {
             state = .toolsMissing
@@ -204,7 +216,11 @@ final class ImageGenManager {
         process.arguments = arguments
         process.currentDirectoryURL = Self.supportDir
         var environment = ProcessInfo.processInfo.environment
-        environment["PYTHONPATH"] = Self.packagesDir.path
+        // Con lo stack nel bundle il Python integrato lo trova da solo;
+        // solo nel fallback dev serve puntare ai pacchetti esterni.
+        if !Self.stackInBundle {
+            environment["PYTHONPATH"] = Self.packagesDir.path
+        }
         environment["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
         process.environment = environment
 

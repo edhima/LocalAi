@@ -54,7 +54,17 @@ final class ImageTrainingManager {
 
     private static var supportDir: URL { ImageGenManager.supportDir }
     private static var packagesDir: URL { ImageGenManager.packagesDir }
-    private static var scriptURL: URL { supportDir.appendingPathComponent("train_lora_sdxl.py") }
+
+    /// Script di training: quello integrato nel bundle se presente (produzione),
+    /// altrimenti quello scaricato in Application Support (fallback dev).
+    private static var scriptURL: URL {
+        if let bundled = Bundle.main.resourceURL?
+            .appendingPathComponent("train_lora_sdxl.py"),
+            FileManager.default.fileExists(atPath: bundled.path) {
+            return bundled
+        }
+        return supportDir.appendingPathComponent("train_lora_sdxl.py")
+    }
     private static var baseModelsDir: URL {
         supportDir.appendingPathComponent("base-models", isDirectory: true)
     }
@@ -155,28 +165,31 @@ final class ImageTrainingManager {
         }
 
         Task {
-            // 1. strumenti (peft + script) — no-op se già presenti
+            // 1. strumenti — con lo stack nel bundle non serve nulla; nel
+            // fallback dev scarica lo script e installa peft/torchvision.
             state = .preparingTools
-            if !FileManager.default.fileExists(atPath: Self.scriptURL.path) {
-                appendLog("✻ scarico lo script di training (diffusers 0.39.0)…\n")
-                guard let (data, _) = try? await URLSession.shared.data(
-                    from: URL(string: Self.scriptRemote)!),
-                    (try? data.write(to: Self.scriptURL)) != nil
-                else {
-                    state = .failed("download dello script fallito")
-                    return
+            if !ImageGenManager.stackInBundle {
+                if !FileManager.default.fileExists(atPath: Self.scriptURL.path) {
+                    appendLog("✻ scarico lo script di training (diffusers 0.39.0)…\n")
+                    guard let (data, _) = try? await URLSession.shared.data(
+                        from: URL(string: Self.scriptRemote)!),
+                        (try? data.write(to: Self.scriptURL)) != nil
+                    else {
+                        state = .failed("download dello script fallito")
+                        return
+                    }
                 }
-            }
-            let peftCheck = await runStreaming(python.path, ["-c", "import peft, torchvision"], quiet: true)
-            if peftCheck != 0 {
-                appendLog("✻ installo peft (una tantum)…\n")
-                let install = await runStreaming(python.path, [
-                    "-m", "pip", "install", "--quiet",
-                    "--target", Self.packagesDir.path, "peft", "torchvision",
-                ])
-                guard install == 0 else {
-                    state = .failed("installazione peft fallita")
-                    return
+                let peftCheck = await runStreaming(python.path, ["-c", "import peft, torchvision"], quiet: true)
+                if peftCheck != 0 {
+                    appendLog("✻ installo peft (una tantum)…\n")
+                    let install = await runStreaming(python.path, [
+                        "-m", "pip", "install", "--quiet",
+                        "--target", Self.packagesDir.path, "peft", "torchvision",
+                    ])
+                    guard install == 0 else {
+                        state = .failed("installazione peft fallita")
+                        return
+                    }
                 }
             }
 
@@ -265,7 +278,11 @@ final class ImageTrainingManager {
             process.executableURL = URL(fileURLWithPath: executable)
             process.arguments = arguments
             var environment = ProcessInfo.processInfo.environment
-            environment["PYTHONPATH"] = Self.packagesDir.path
+            // Stack nel bundle → il Python integrato lo trova da solo;
+            // solo nel fallback dev serve puntare ai pacchetti esterni.
+            if !ImageGenManager.stackInBundle {
+                environment["PYTHONPATH"] = Self.packagesDir.path
+            }
             environment["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
             environment["TERM"] = "dumb"
             process.environment = environment

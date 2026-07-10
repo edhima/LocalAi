@@ -32,16 +32,19 @@ xcodebuild build -scheme LocalAi -configuration "$CONFIG" \
 PRODUCTS=".xcodebuild/Build/Products/$CONFIG"
 APP="LocalAi.app"
 
-# --- Runtime Python integrato (CPython standalone ricollocabile + mlx-lm) ---
+# --- Runtime Python integrato (CPython standalone ricollocabile + stack ML) ---
 # Scaricato e preparato una sola volta in .tooling/python, poi copiato nel
-# bundle: l'app è autonoma, la disinstallazione è "cestina LocalAi.app".
+# bundle: l'app è autonoma (chat, training testo/immagini, generazione),
+# la disinstallazione è "cestina LocalAi.app". Restano fuori solo i DATI:
+# modelli scaricati, immagini generate, safetensors che l'utente monta.
 PBS_TAG="20251217"
 PBS_PY="3.12.12"
 RUNTIME_DIR=".tooling/python"
-RUNTIME_MARKER="$RUNTIME_DIR/.localai-ready-$PBS_PY-$PBS_TAG"
+# la versione del marker include lo stack: cambiala per forzare la ricostruzione
+RUNTIME_MARKER="$RUNTIME_DIR/.localai-ready-$PBS_PY-$PBS_TAG-fullstack"
 
 if [[ ! -f "$RUNTIME_MARKER" ]]; then
-  echo "Preparo il runtime Python integrato ($PBS_PY, una tantum)…"
+  echo "Preparo il runtime Python integrato ($PBS_PY, una tantum, ~1 GB)…"
   rm -rf "$RUNTIME_DIR"
   mkdir -p .tooling
   TARBALL=".tooling/cpython.tar.gz"
@@ -49,16 +52,25 @@ if [[ ! -f "$RUNTIME_MARKER" ]]; then
     "https://github.com/astral-sh/python-build-standalone/releases/download/$PBS_TAG/cpython-$PBS_PY+$PBS_TAG-aarch64-apple-darwin-install_only.tar.gz"
   tar -xzf "$TARBALL" -C .tooling   # estrae .tooling/python
   rm -f "$TARBALL"
-  echo "Installo mlx-lm nel runtime…"
+  echo "Installo lo stack ML nel runtime (mlx-lm, torch, diffusers, peft…)…"
   "$RUNTIME_DIR/bin/python3" -m pip install --quiet --upgrade pip
   # transformers pinnato: la 5.13 rompe l'import di mlx-lm 0.31.x
-  "$RUNTIME_DIR/bin/python3" -m pip install --quiet mlx-lm "transformers~=5.12.0"
+  "$RUNTIME_DIR/bin/python3" -m pip install --quiet \
+    mlx-lm "transformers~=5.12.0" \
+    torch diffusers peft torchvision safetensors accelerate pillow
   # dimagrimento: cache e test non servono a runtime
   find "$RUNTIME_DIR" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
   rm -rf "$RUNTIME_DIR/lib/python3.12/test" 2>/dev/null || true
-  "$RUNTIME_DIR/bin/python3" -m mlx_lm.lora --help > /dev/null
+  "$RUNTIME_DIR/bin/python3" -c "import mlx_lm, torch, diffusers, peft" > /dev/null
   touch "$RUNTIME_MARKER"
   echo "Runtime pronto."
+fi
+
+# Script di training LoRA immagini (diffusers) integrato nel bundle
+TRAIN_SCRIPT=".tooling/train_lora_sdxl.py"
+if [[ ! -f "$TRAIN_SCRIPT" ]]; then
+  curl -sL -o "$TRAIN_SCRIPT" \
+    "https://raw.githubusercontent.com/huggingface/diffusers/v0.39.0/examples/dreambooth/train_dreambooth_lora_sdxl.py"
 fi
 
 echo "Assemblo $APP…"
@@ -73,8 +85,10 @@ done
 # Cintura e bretelle: MLX cerca anche "mlx.metallib" accanto all'eseguibile.
 METALLIB="$PRODUCTS/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib"
 [[ -f "$METALLIB" ]] && cp "$METALLIB" "$APP/Contents/MacOS/mlx.metallib"
-# Runtime Python + mlx-lm integrati: l'app non dipende da nulla di esterno.
+# Runtime Python + stack ML integrati: l'app non dipende da nulla di esterno.
 cp -R "$RUNTIME_DIR" "$APP/Contents/Resources/python"
+# Script di training LoRA immagini nel bundle
+[[ -f "$TRAIN_SCRIPT" ]] && cp "$TRAIN_SCRIPT" "$APP/Contents/Resources/train_lora_sdxl.py"
 # Icona dell'app
 [[ -f "Assets/AppIcon.icns" ]] && cp "Assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 # Credits mostrati nel pannello "Informazioni su LocalAi"
