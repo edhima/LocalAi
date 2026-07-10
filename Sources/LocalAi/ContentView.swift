@@ -145,7 +145,7 @@ struct SidebarView: View {
             }
 
             Section {
-                ImageGenRow(imageGen: imageGen)
+                ImageGenRow(imageGen: imageGen, engine: engine)
                 Button {
                     training.windowMode = 1
                     openWindow(id: "training")
@@ -339,6 +339,7 @@ struct ModelRow: View {
 
 struct ImageGenRow: View {
     @Bindable var imageGen: ImageGenManager
+    @Bindable var engine: QwenEngine
     @State private var showParams = false
 
     var body: some View {
@@ -365,9 +366,16 @@ struct ImageGenRow: View {
                         .font(Theme.mono(11))
                 }
                 .buttonStyle(.borderless)
-                Text("un .safetensors SD/SDXL (es. da ComfyUI); genera dalla chat con /img")
-                    .font(Theme.mono(10))
-                    .foregroundStyle(Theme.dim)
+                if engine.activeModel != nil {
+                    Text("⚠ montando il checkpoint verrà liberato il modello chat (\(engine.activeModel?.shortName ?? "")) per la memoria")
+                        .font(Theme.mono(9))
+                        .foregroundStyle(Theme.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("un .safetensors SD/SDXL (es. da ComfyUI); genera dalla chat con /img")
+                        .font(Theme.mono(10))
+                        .foregroundStyle(Theme.dim)
+                }
             case .loadingModel:
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.mini)
@@ -439,8 +447,25 @@ struct ImageGenRow: View {
                     .font(Theme.mono(10))
                     .foregroundStyle(Theme.red)
                     .fixedSize(horizontal: false, vertical: true)
-                Button("riprova") { imageGen.refreshEnvironment() }
-                    .font(Theme.mono(10))
+                // Dettaglio reale (traceback del worker) per capire la causa
+                if !imageGen.log.isEmpty {
+                    ScrollView {
+                        Text(String(imageGen.log.suffix(600)))
+                            .font(Theme.mono(9))
+                            .foregroundStyle(Theme.dim)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 90)
+                }
+                HStack(spacing: 8) {
+                    Button("riprova") { imageGen.refreshEnvironment() }
+                        .font(Theme.mono(10))
+                    if imageGen.loraURL != nil {
+                        Button("riprova senza LoRA") { imageGen.remount(lora: nil) }
+                            .font(Theme.mono(10))
+                    }
+                }
             }
 
             if !imageGen.log.isEmpty, case .installingTools = imageGen.state {
@@ -460,7 +485,16 @@ struct ImageGenRow: View {
         panel.allowsMultipleSelection = false
         panel.message = "Scegli un checkpoint Stable Diffusion / SDXL (.safetensors single-file)"
         if panel.runModal() == .OK, let url = panel.url {
+            freeChatModelIfLoaded()
             imageGen.mount(checkpoint: url)
+        }
+    }
+
+    /// Chat e immagini competono per la stessa memoria GPU su Apple Silicon:
+    /// libera il modello chat prima di caricare la pipeline immagini.
+    private func freeChatModelIfLoaded() {
+        if engine.activeModel != nil {
+            engine.unload()
         }
     }
 
