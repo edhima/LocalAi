@@ -74,12 +74,21 @@ final class TrainingManager {
 
     private var venvBin: URL { Self.venvDir.appendingPathComponent("bin") }
 
-    /// Python integrato nel bundle (Contents/Resources/python) con mlx-lm preinstallato:
+    /// Python integrato nel bundle (Contents/Resources/python) con lo stack ML:
     /// l'app è autonoma e la disinstallazione è "cestina LocalAi.app".
+    /// `python3` è un symlink a `python3.12`: proviamo entrambi, e verifichiamo
+    /// che il file esista davvero (più robusto di `isExecutableFile` sui symlink).
     static var embeddedPython: URL? {
         guard let resources = Bundle.main.resourceURL else { return nil }
-        let python = resources.appendingPathComponent("python/bin/python3")
-        return FileManager.default.isExecutableFile(atPath: python.path) ? python : nil
+        let fm = FileManager.default
+        for name in ["python/bin/python3", "python/bin/python3.12"] {
+            let candidate = resources.appendingPathComponent(name)
+            let resolved = candidate.resolvingSymlinksInPath()
+            if fm.fileExists(atPath: resolved.path) || fm.isExecutableFile(atPath: candidate.path) {
+                return candidate
+            }
+        }
+        return nil
     }
     var usesEmbeddedRuntime: Bool { Self.embeddedPython != nil }
 
