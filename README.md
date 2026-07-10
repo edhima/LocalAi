@@ -148,3 +148,8 @@ Librerie: [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm) (`MLXLLM`, 
 ## Cosa manca rispetto a Claude Code
 
 Per onestà: niente sotto-agenti, MCP, hooks o permessi granulari per comando. Il limite principale è il modello: un LLM locale da 4–30B è molto meno affidabile come agente. Buoni prossimi passi: persistenza delle conversazioni, diff-preview prima di approvare una modifica, allowlist di comandi bash.
+
+## Autore
+
+**Eridon Dhima** — [Alpha Soft](mailto:e.dhima@alpha-soft.al)
+Contatto: e.dhima@alpha-soft.al · Tel: +355 69 600 0666

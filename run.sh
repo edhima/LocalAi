@@ -103,7 +103,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string></string>
+    <string>© 2026 Eridon Dhima — e.dhima@alpha-soft.al</string>
 </dict>
 </plist>
 PLIST
