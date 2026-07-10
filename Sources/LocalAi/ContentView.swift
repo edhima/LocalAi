@@ -459,10 +459,18 @@ struct ImageGenRow: View {
                     .frame(maxHeight: 90)
                 }
                 HStack(spacing: 8) {
+                    Button {
+                        pickCheckpoint()
+                    } label: {
+                        Label("scegli un altro file…", systemImage: "photo.badge.plus")
+                            .font(Theme.mono(10))
+                            .foregroundStyle(Theme.accent)
+                    }
+                    .buttonStyle(.borderless)
                     Button("riprova") { imageGen.refreshEnvironment() }
                         .font(Theme.mono(10))
                     if imageGen.loraURL != nil {
-                        Button("riprova senza LoRA") { imageGen.remount(lora: nil) }
+                        Button("senza LoRA") { imageGen.remount(lora: nil) }
                             .font(Theme.mono(10))
                     }
                 }
