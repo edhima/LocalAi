@@ -214,10 +214,12 @@ final class ImageGenManager {
         appendLog("✻ carico \(checkpoint.lastPathComponent) (\(isXL ? "SDXL" : "SD"))…\n")
 
         // Smonta il worker precedente e ASPETTA che rilasci la memoria GPU
-        // prima di avviarne uno nuovo: altrimenti due checkpoint insieme in
-        // memoria fanno uccidere il nuovo worker durante il caricamento
-        // (è il caso tipico del rimontaggio per applicare un LoRA).
+        // prima di avviarne uno nuovo (evita picchi di memoria nel rimontaggio).
+        // IMPORTANTE: azzera il suo terminationHandler prima di terminarlo, così
+        // la sua chiusura non scambia questa sostituzione voluta per un crash e
+        // non riporta lo stato a .failed (bloccando l'avvio del nuovo worker).
         let old = worker
+        old?.terminationHandler = nil
         worker = nil
         workerStdin = nil
         Task.detached {
@@ -303,6 +305,7 @@ final class ImageGenManager {
     }
 
     func unmount() {
+        worker?.terminationHandler = nil  // teardown voluto, non un crash
         worker?.terminate()
         worker = nil
         workerStdin = nil
