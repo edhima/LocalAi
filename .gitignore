@@ -1,0 +1,17 @@
+# prodotti di build
+.build/
+.xcodebuild/
+LocalAi.app/
+
+# runtime Python scaricato da run.sh (ricostruibile)
+.tooling/
+
+# modelli/pesi: non appartengono al repo
+modells/
+*.safetensors
+
+# macOS
+.DS_Store
+
+# dati per-utente di Xcode
+.swiftpm/
