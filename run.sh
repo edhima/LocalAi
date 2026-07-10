@@ -75,6 +75,8 @@ METALLIB="$PRODUCTS/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib"
 [[ -f "$METALLIB" ]] && cp "$METALLIB" "$APP/Contents/MacOS/mlx.metallib"
 # Runtime Python + mlx-lm integrati: l'app non dipende da nulla di esterno.
 cp -R "$RUNTIME_DIR" "$APP/Contents/Resources/python"
+# Icona dell'app
+[[ -f "Assets/AppIcon.icns" ]] && cp "Assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -94,6 +96,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <string>1.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
