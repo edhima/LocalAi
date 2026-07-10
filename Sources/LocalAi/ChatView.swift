@@ -398,12 +398,23 @@ struct ChatView: View {
         let files = attachedFiles
         guard !text.trimmingCharacters(in: .whitespaces).isEmpty || !files.isEmpty else { return }
 
-        // /img <prompt> → generazione immagine col checkpoint montato
+        // /img <prompt> → generazione immagine col checkpoint montato.
+        // Riconosce "/img" con o senza spazio/descrizione.
         let trimmed = text.trimmingCharacters(in: .whitespaces)
-        if trimmed.lowercased().hasPrefix("/img ") {
-            let prompt = String(trimmed.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-            guard !prompt.isEmpty else { return }
+        let lower = trimmed.lowercased()
+        if lower == "/img" || lower.hasPrefix("/img ") {
+            let prompt = trimmed.count > 4
+                ? String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespaces) : ""
             draft = ""
+            guard !prompt.isEmpty else {
+                // /img senza descrizione: guida invece di trattarlo come chat
+                engine.appendNote(
+                    user: trimmed,
+                    note: imageGen.isReady
+                        ? "scrivi la descrizione dopo /img, es.  /img un faro al tramonto"
+                        : "monta prima un checkpoint immagine dalla sidebar, poi  /img <descrizione>")
+                return
+            }
             guard imageGen.isReady else {
                 let id = engine.beginImageGeneration(prompt: prompt)
                 engine.completeImageGeneration(
