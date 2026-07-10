@@ -77,6 +77,20 @@ METALLIB="$PRODUCTS/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib"
 cp -R "$RUNTIME_DIR" "$APP/Contents/Resources/python"
 # Icona dell'app
 [[ -f "Assets/AppIcon.icns" ]] && cp "Assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+# Credits mostrati nel pannello "Informazioni su LocalAi"
+cat > "$APP/Contents/Resources/Credits.rtf" <<'RTF'
+{\rtf1\ansi\deff0
+{\fonttbl{\f0 Helvetica;}}
+\f0\fs24\qc
+{\b LocalAi}\line
+AI locale su Apple Silicon\line\line
+Autore: {\b Eridon Dhima}\line
+e.dhima@alpha-soft.al\line
+Tel: +355 69 600 0666\line\line
+Motore: MLX (Apple) \'b7 Modelli: Qwen\line
+github.com/edhima/LocalAi
+}
+RTF
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

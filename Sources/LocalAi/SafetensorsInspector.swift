@@ -1,3 +1,8 @@
+//
+//  LocalAi — AI locale su Apple Silicon (chat, agente, RAG, training, immagini)
+//  © 2026 Eridon Dhima · e.dhima@alpha-soft.al · +355 69 600 0666
+//
+
 import Foundation
 
 /// Legge l'intestazione JSON di un file .safetensors (senza caricare i pesi)
