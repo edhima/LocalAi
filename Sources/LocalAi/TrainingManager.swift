@@ -299,6 +299,75 @@ final class TrainingManager {
         return chunks
     }
 
+    // MARK: - Conversione HF → MLX
+
+    /// Converte un modello Hugging Face (id del hub o cartella locale in formato HF)
+    /// in un modello MLX pronto per il training LoRA e per la chat.
+    /// `quantizeBits`: 4 o 8 per quantizzare, nil per tenere la precisione originale.
+    func convertModel(source: String, quantizeBits: Int?) {
+        guard !isBusy, toolsReady else { return }
+        let clean = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+
+        // Un singolo .safetensors non è convertibile: servono config e tokenizer.
+        if clean.hasSuffix(".safetensors") {
+            appendLog("✗ un singolo .safetensors non basta: servono config.json e tokenizer. Indica la cartella completa del modello (o l'id Hugging Face).\n")
+            return
+        }
+
+        let name = clean.split(separator: "/").last.map(String.init) ?? clean
+        let suffix = quantizeBits.map { "-\($0)bit" } ?? "-mlx"
+        let destination = Self.baseDir
+            .appendingPathComponent("converted", isDirectory: true)
+            .appendingPathComponent(name + suffix, isDirectory: true)
+
+        isBusy = true
+        busyLabel = "converto in MLX…"
+        appendLog("✻ mlx_lm.convert \(clean) → \(destination.path)\(quantizeBits.map { " (\($0)-bit)" } ?? "")\n")
+        Task {
+            try? FileManager.default.createDirectory(
+                at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? FileManager.default.removeItem(at: destination)
+
+            // Per gli id del hub: snapshot COMPLETO prima della conversione
+            // (mlx_lm scarica solo i pesi e huggingface_hub poi rifiuta lo
+            // snapshot parziale al salvataggio).
+            if !clean.hasPrefix("/"), clean.contains("/"), let python = TrainingManager.embeddedPython {
+                appendLog("✻ scarico lo snapshot completo di \(clean)…\n")
+                let dl = await run(python.path, [
+                    "-c",
+                    "from huggingface_hub import snapshot_download; snapshot_download('\(clean)')",
+                ])
+                guard dl == 0 else {
+                    appendLog("\n✗ download fallito (exit \(dl))\n")
+                    isBusy = false
+                    return
+                }
+            }
+
+            var args = ["--hf-path", clean, "--mlx-path", destination.path]
+            if let bits = quantizeBits {
+                args += ["-q", "--q-bits", String(bits)]
+            }
+            let (tool, fullArgs) = mlxCommand("mlx_lm.convert", args)
+            let status = await run(tool, fullArgs)
+            if status == 0,
+                FileManager.default.fileExists(
+                    atPath: destination.appendingPathComponent("config.json").path) {
+                trainModelID = destination.path
+                appendLog("""
+                    \n✓ modello MLX pronto: \(destination.path)
+                      · impostato come modello di training (passo 3)
+                      · montabile in chat: sidebar → "cartella modello locale…"\n
+                    """)
+            } else {
+                appendLog("\n✗ conversione fallita (exit \(status)) — vedi log sopra\n")
+            }
+            refreshEnvironment()
+            isBusy = false
+        }
+    }
+
     // MARK: - Training e fusione
 
     func startTraining() {

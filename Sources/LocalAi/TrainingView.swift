@@ -11,6 +11,8 @@ import UniformTypeIdentifiers
 struct TrainingView: View {
     @Bindable var manager: TrainingManager
     @Bindable var engine: QwenEngine
+    @State private var convertSource = ""
+    @State private var convertBits = 4
 
     var body: some View {
         HSplitView {
@@ -132,6 +134,47 @@ struct TrainingView: View {
     private var trainingSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionTitle("3 · training LoRA")
+
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        TextField("org/modello-hf oppure /percorso/cartella", text: $convertSource)
+                            .textFieldStyle(.plain)
+                            .font(Theme.mono(11))
+                            .padding(6)
+                            .background(Theme.inputBackground, in: RoundedRectangle(cornerRadius: 6))
+                        Button("cartella…") { pickConvertFolder() }
+                            .font(Theme.mono(10))
+                    }
+                    Picker("", selection: $convertBits) {
+                        Text("4-bit (per QLoRA, consigliato)").tag(4)
+                        Text("8-bit").tag(8)
+                        Text("precisione originale").tag(0)
+                    }
+                    .pickerStyle(.radioGroup)
+                    .labelsHidden()
+                    .font(Theme.mono(11))
+                    Button("converti in MLX") {
+                        manager.convertModel(
+                            source: convertSource,
+                            quantizeBits: convertBits == 0 ? nil : convertBits)
+                        convertSource = ""
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.accent)
+                    .font(Theme.mono(11))
+                    .disabled(manager.isBusy || convertSource.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Text("serve un checkpoint HF completo (config + tokenizer + safetensors); l'output finisce in LocalAiTraining/converted/ e diventa il modello del training")
+                        .font(Theme.mono(9))
+                        .foregroundStyle(Theme.dim)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 6)
+            } label: {
+                Text("converti un modello HF in MLX (per training e chat)…")
+                    .font(Theme.mono(11))
+                    .foregroundStyle(Theme.secondary)
+            }
 
             HStack(spacing: 6) {
                 Text("modello")
@@ -300,6 +343,17 @@ struct TrainingView: View {
         Text(title)
             .font(Theme.mono(12, weight: .semibold))
             .foregroundStyle(Theme.text)
+    }
+
+    private func pickConvertFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Scegli la cartella del modello in formato Hugging Face"
+        if panel.runModal() == .OK, let url = panel.url {
+            convertSource = url.path
+        }
     }
 
     private func pickFiles() {
