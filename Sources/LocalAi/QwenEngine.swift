@@ -618,9 +618,19 @@ final class QwenEngine {
         """
     }
 
-    /// Separa il blocco di ragionamento `<think>…</think>` (Qwen3) dalla risposta vera e propria.
+    /// Separa il blocco di ragionamento dalla risposta. Gestisce entrambi gli stili:
+    /// Qwen3 emette `<think>…</think>`, GLM apre il blocco nel template e
+    /// genera solo `ragionamento…</think>risposta` (chiusura senza apertura).
     static func splitThinking(_ raw: String) -> (thinking: String, content: String) {
         guard let start = raw.range(of: "<think>") else {
+            if let end = raw.range(of: "</think>") {
+                let thinking = String(raw[..<end.lowerBound])
+                let content = String(raw[end.upperBound...])
+                return (
+                    thinking.trimmingCharacters(in: .whitespacesAndNewlines),
+                    content.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            }
             return ("", raw.trimmingCharacters(in: .whitespacesAndNewlines))
         }
         guard let end = raw.range(of: "</think>", range: start.upperBound..<raw.endIndex) else {
