@@ -401,6 +401,29 @@ struct ImageGenRow: View {
                     }
                     .buttonStyle(.borderless)
                 }
+                // Riga LoRA sempre visibile: è "l'add-on sopra il checkpoint",
+                // non un secondo modello da montare a parte.
+                if let lora = imageGen.loraURL {
+                    HStack(spacing: 6) {
+                        Text("+ LoRA").foregroundStyle(Theme.accent)
+                        Text(lora.deletingLastPathComponent().lastPathComponent)
+                            .foregroundStyle(Theme.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        Button("togli") { imageGen.remount(lora: nil) }
+                    }
+                    .font(Theme.mono(10))
+                } else {
+                    Button {
+                        pickLora()
+                    } label: {
+                        Label("aggiungi un LoRA sopra…", systemImage: "plus.rectangle.on.rectangle")
+                            .font(Theme.mono(10))
+                            .foregroundStyle(Theme.accent)
+                    }
+                    .buttonStyle(.borderless)
+                }
                 Text("pronto — scrivi /img <descrizione> in chat · \(imageGen.width)×\(imageGen.height) · \(Int(imageGen.steps)) passi")
                     .font(Theme.mono(10))
                     .foregroundStyle(Theme.green)
@@ -438,6 +461,21 @@ struct ImageGenRow: View {
         panel.message = "Scegli un checkpoint Stable Diffusion / SDXL (.safetensors single-file)"
         if panel.runModal() == .OK, let url = panel.url {
             imageGen.mount(checkpoint: url)
+        }
+    }
+
+    private func pickLora() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Scegli un LoRA (.safetensors) da applicare sul checkpoint montato"
+        if let docs = try? FileManager.default.url(
+            for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false) {
+            panel.directoryURL = docs.appendingPathComponent("LocalAiTraining/loras")
+        }
+        if panel.runModal() == .OK, let url = panel.url {
+            imageGen.remount(lora: url)
         }
     }
 }
