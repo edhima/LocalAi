@@ -379,6 +379,7 @@ final class ImageGenManager {
     private static func writeWorkerScript() {
         let script = #"""
         import json, random, sys, torch
+        import numpy as np
         from diffusers import (
             StableDiffusionXLPipeline,
             StableDiffusionPipeline,
@@ -391,7 +392,16 @@ final class ImageGenManager {
         # euler_ancestral: lo scheduler con cui questi checkpoint sono usati in ComfyUI
         pipe.scheduler = EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
         pipe = pipe.to("mps")
+        # Il VAE SDXL in fp16 su MPS produce NaN → immagini nere: decode in fp32.
+        pipe.vae.to(torch.float32)
         pipe.enable_attention_slicing()
+        # fp16 su MPS può comunque generare NaN in modo stocastico (prompt/size/steps):
+        # al primo frame nero l'intera pipeline passa a fp32 e resta così.
+        forced_fp32 = False
+
+        def is_black(image):
+            return float(np.asarray(image.convert("L")).mean()) < 2.0
+
         print(json.dumps({"status": "ready"}), flush=True)
 
         for line in sys.stdin:
@@ -404,22 +414,32 @@ final class ImageGenManager {
                 seed = int(req.get("seed", -1))
                 if seed < 0:
                     seed = random.randint(0, 2**32 - 1)
-                generator = torch.Generator(device="mps").manual_seed(seed)
+                generator = torch.Generator(device="cpu").manual_seed(seed)
 
                 def on_step(pipeline, step, timestep, kwargs):
                     print(json.dumps({"status": "progress", "step": step + 1, "total": steps}), flush=True)
                     return kwargs
 
-                image = pipe(
-                    req["prompt"],
-                    negative_prompt=req.get("negative", ""),
-                    num_inference_steps=steps,
-                    guidance_scale=float(req.get("cfg", 7.0)),
-                    width=int(req.get("width", 1024 if arch == "xl" else 512)),
-                    height=int(req.get("height", 1024 if arch == "xl" else 512)),
-                    generator=generator,
-                    callback_on_step_end=on_step,
-                ).images[0]
+                def run():
+                    return pipe(
+                        req["prompt"],
+                        negative_prompt=req.get("negative", ""),
+                        num_inference_steps=steps,
+                        guidance_scale=float(req.get("cfg", 7.0)),
+                        width=int(req.get("width", 1024 if arch == "xl" else 512)),
+                        height=int(req.get("height", 1024 if arch == "xl" else 512)),
+                        generator=generator,
+                        callback_on_step_end=on_step,
+                    ).images[0]
+
+                image = run()
+                if is_black(image) and not forced_fp32:
+                    # NaN in fp16: passa a fp32 (definitivo per la sessione) e riprova.
+                    print(json.dumps({"status": "progress", "step": 0, "total": steps}), flush=True)
+                    pipe.to(device="mps", dtype=torch.float32)
+                    forced_fp32 = True
+                    generator = torch.Generator(device="cpu").manual_seed(seed)
+                    image = run()
                 image.save(req["out"])
                 print(json.dumps({"status": "done", "out": req["out"], "seed": seed}), flush=True)
             except Exception as exc:
