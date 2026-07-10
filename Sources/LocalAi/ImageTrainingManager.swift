@@ -67,11 +67,63 @@ final class ImageTrainingManager {
     private static let scriptRemote =
         "https://raw.githubusercontent.com/huggingface/diffusers/v0.39.0/examples/dreambooth/train_dreambooth_lora_sdxl.py"
 
+    private static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "webp", "bmp"]
+
     func setDataset(_ url: URL) {
         datasetDir = url
-        let images = (try? FileManager.default.contentsOfDirectory(atPath: url.path))?
-            .filter { ["png", "jpg", "jpeg", "webp"].contains(($0 as NSString).pathExtension.lowercased()) }
-        datasetImageCount = images?.count ?? 0
+        datasetImageCount = Self.imageFiles(in: url).count
+    }
+
+    /// File-immagine per estensione, ignorando file nascosti (`.DS_Store` incluso).
+    private static func imageFiles(in dir: URL) -> [URL] {
+        let items = (try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        return items.filter { imageExtensions.contains($0.pathExtension.lowercased()) }
+    }
+
+    /// Copia in `dest` solo le immagini davvero apribili, scartando file
+    /// nascosti, non-immagine e corrotti (con nota nel log). Restituisce il
+    /// numero di immagini valide, o nil su errore di preparazione.
+    private func prepareCleanDataset(from source: URL, into dest: URL) -> Int? {
+        let fm = FileManager.default
+        try? fm.removeItem(at: dest)
+        do {
+            try fm.createDirectory(at: dest, withIntermediateDirectories: true)
+        } catch {
+            appendLog("✗ non riesco a preparare il dataset: \(error.localizedDescription)\n")
+            return nil
+        }
+        var kept = 0
+        var skipped = 0
+        for file in Self.imageFiles(in: source) {
+            // Verifica che sia un'immagine reale leggendone l'intestazione.
+            guard let data = try? Data(contentsOf: file, options: .mappedIfSafe),
+                Self.isRealImage(data)
+            else {
+                skipped += 1
+                appendLog("  · scarto \(file.lastPathComponent) (non è un'immagine valida)\n")
+                continue
+            }
+            try? fm.copyItem(at: file, to: dest.appendingPathComponent(file.lastPathComponent))
+            kept += 1
+        }
+        if skipped > 0 {
+            appendLog("  \(kept) immagini valide, \(skipped) scartate\n")
+        }
+        return kept
+    }
+
+    /// Riconosce PNG/JPEG/WebP/BMP/GIF dai magic bytes iniziali.
+    private static func isRealImage(_ data: Data) -> Bool {
+        guard data.count >= 12 else { return false }
+        let b = [UInt8](data.prefix(12))
+        if b[0] == 0x89, b[1] == 0x50, b[2] == 0x4E, b[3] == 0x47 { return true }        // PNG
+        if b[0] == 0xFF, b[1] == 0xD8, b[2] == 0xFF { return true }                       // JPEG
+        if b[0] == 0x52, b[1] == 0x49, b[2] == 0x46, b[3] == 0x46,
+            b[8] == 0x57, b[9] == 0x45, b[10] == 0x42, b[11] == 0x50 { return true }      // WEBP
+        if b[0] == 0x42, b[1] == 0x4D { return true }                                    // BMP
+        if b[0] == 0x47, b[1] == 0x49, b[2] == 0x46 { return true }                      // GIF
+        return false
     }
 
     // MARK: - Training
@@ -151,20 +203,29 @@ final class ImageTrainingManager {
                 }
             }
 
-            // 3. training
+            // 2b. dataset pulito: lo script diffusers legge OGNI file della cartella,
+            // quindi .DS_Store, file nascosti e immagini corrotte lo fanno fallire.
+            // Copiamo solo le immagini valide in una sottocartella dedicata.
             let stamp = Int(Date.timeIntervalSinceReferenceDate)
             let outputDir = Self.lorasDir.appendingPathComponent("lora-\(baseName)-\(stamp)")
             try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+            let cleanDir = outputDir.appendingPathComponent("dataset", isDirectory: true)
+            guard let validCount = prepareCleanDataset(from: dataset, into: cleanDir), validCount > 0 else {
+                state = .failed("nessuna immagine valida nella cartella (solo file non-immagine o corrotti)")
+                return
+            }
+
+            // 3. training
             state = .training(step: 0, total: Int(steps))
             appendLog("""
-                ✻ training LoRA — \(datasetImageCount) immagini · trigger "\(trigger)"
+                ✻ training LoRA — \(validCount) immagini valide · trigger "\(trigger)"
                   rank \(Int(rank)) · \(Int(steps)) passi · \(resolution)px
                   (~1.6 passi/secondo a 512px su questo Mac)\n
                 """)
             let status = await runStreaming(python.path, [
                 Self.scriptURL.path,
                 "--pretrained_model_name_or_path", baseDir.path,
-                "--instance_data_dir", dataset.path,
+                "--instance_data_dir", cleanDir.path,
                 "--instance_prompt", trigger,
                 "--output_dir", outputDir.path,
                 "--rank", String(Int(rank)),
