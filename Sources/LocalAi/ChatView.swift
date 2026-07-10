@@ -220,6 +220,17 @@ struct ChatView: View {
 
     // MARK: - Transcript
 
+    /// Id dell'ancora invisibile in fondo al transcript: scrollare su questa
+    /// (anziché sull'ultimo messaggio, che cresce) segue in modo affidabile.
+    private static let bottomAnchor = "transcript-bottom"
+
+    /// Segnale di crescita che include ANCHE il ragionamento: così l'auto-scroll
+    /// segue i modelli (come GLM) che riempiono prima il blocco <think>.
+    private var growthSignal: Int {
+        guard let last = engine.messages.last else { return 0 }
+        return last.content.count + last.thinking.count
+    }
+
     private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -232,22 +243,22 @@ struct ChatView: View {
                         TranscriptRow(message: message)
                             .id(message.id)
                     }
+                    // ancora in fondo: bersaglio stabile per lo scroll automatico
+                    Color.clear
+                        .frame(height: 1)
+                        .id(Self.bottomAnchor)
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 14)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .onChange(of: engine.messages.last?.content) {
-                if let last = engine.messages.last {
-                    proxy.scrollTo(last.id, anchor: .bottom)
-                }
-            }
-            .onChange(of: engine.messages.count) {
-                if let last = engine.messages.last {
-                    proxy.scrollTo(last.id, anchor: .bottom)
-                }
-            }
+            .onChange(of: growthSignal) { scrollToBottom(proxy) }
+            .onChange(of: engine.messages.count) { scrollToBottom(proxy) }
         }
+    }
+
+    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+        proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
     }
 
     // MARK: - Input
