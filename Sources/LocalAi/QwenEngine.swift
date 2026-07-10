@@ -165,6 +165,9 @@ final class QwenEngine {
                 if model.id.hasPrefix("local:") {
                     configuration = ModelConfiguration(
                         directory: URL(fileURLWithPath: String(model.id.dropFirst("local:".count))))
+                } else if model.id.localizedCaseInsensitiveContains("glm") {
+                    // La famiglia GLM emette le tool call nel proprio formato.
+                    configuration = ModelConfiguration(id: model.id, toolCallFormat: .glm4)
                 } else {
                     configuration = ModelConfiguration(id: model.id)
                 }

@@ -92,6 +92,13 @@ public enum ModelCatalog {
             note: "Il più capace, più lento"
         ),
         CatalogModel(
+            id: "mlx-community/GLM-4.7-Flash-4bit",
+            displayName: "GLM-4.7 Flash (MoE)",
+            sizeGB: 16.9,
+            supportsThinking: true,
+            note: "Il GLM più recente che gira in locale"
+        ),
+        CatalogModel(
             id: "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
             displayName: "Qwen2.5 Coder 7B",
             sizeGB: 4.3,

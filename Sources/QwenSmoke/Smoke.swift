@@ -34,12 +34,6 @@ actor Recorder {
 @main
 struct Smoke {
     static func main() async {
-        // Fusibile globale: se il test non finisce in 6 minuti, esce.
-        Task.detached {
-            try? await Task.sleep(for: .seconds(360))
-            print("SMOKE FAIL: timeout globale (6 minuti)")
-            exit(2)
-        }
         do {
             if ProcessInfo.processInfo.environment["QWEN_SMOKE_RAG"] == "1" {
                 try await ragCheck()
@@ -121,6 +115,13 @@ struct Smoke {
         MLX.GPU.set(cacheLimit: 64 * 1024 * 1024)
         MLX.GPU.set(memoryLimit: Int(Double(ProcessInfo.processInfo.physicalMemory) * 0.6), relaxed: false)
         print("Modello pronto.")
+
+        // Fusibile: 6 minuti dal caricamento (il download può durare di più).
+        Task.detached {
+            try? await Task.sleep(for: .seconds(360))
+            print("SMOKE FAIL: timeout globale (6 minuti dal caricamento)")
+            exit(2)
+        }
 
         let toolbox = AgentToolbox(workspace: ws)
         let recorder = Recorder()

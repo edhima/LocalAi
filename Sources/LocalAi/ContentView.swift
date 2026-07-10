@@ -74,7 +74,7 @@ struct SidebarView: View {
                     )
                 }
             } header: {
-                Text("modelli qwen")
+                Text("catalogo modelli")
                     .font(Theme.mono(11, weight: .semibold))
                     .foregroundStyle(Theme.dim)
             }
