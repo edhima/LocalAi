@@ -417,6 +417,15 @@ final class QwenEngine {
             """)
     }
 
+    /// Aggiunge in transcript un messaggio utente e una nota dell'assistente
+    /// senza passare dal modello (es. suggerimenti quando nessun LLM è caricato).
+    func appendNote(user: String?, note: String) {
+        if let user {
+            messages.append(ChatMessage(role: .user, content: user, isComplete: true))
+        }
+        messages.append(ChatMessage(role: .assistant, content: note, isComplete: true))
+    }
+
     /// Registra in chat una richiesta di generazione immagine; restituisce
     /// l'id del segnaposto assistant da completare a generazione finita.
     func beginImageGeneration(prompt: String) -> UUID {

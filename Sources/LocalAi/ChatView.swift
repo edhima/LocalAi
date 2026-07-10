@@ -20,18 +20,23 @@ struct ChatView: View {
         VStack(spacing: 0) {
             switch engine.phase {
             case .idle:
-                centered {
-                    VStack(spacing: 10) {
-                        Text("✻")
-                            .font(Theme.mono(40))
-                            .foregroundStyle(Theme.accent)
-                        Text("Nessun modello caricato")
-                            .font(Theme.mono(15, weight: .semibold))
-                            .foregroundStyle(Theme.text)
-                        Text("Scegli un modello Qwen dalla barra laterale.\nAl primo avvio verrà scaricato da Hugging Face.")
-                            .font(Theme.mono(12))
-                            .foregroundStyle(Theme.secondary)
-                            .multilineTextAlignment(.center)
+                // Col solo modello immagine montato la chat serve comunque (/img).
+                if imageGen.isReady {
+                    transcript
+                } else {
+                    centered {
+                        VStack(spacing: 10) {
+                            Text("✻")
+                                .font(Theme.mono(40))
+                                .foregroundStyle(Theme.accent)
+                            Text("Nessun modello caricato")
+                                .font(Theme.mono(15, weight: .semibold))
+                                .foregroundStyle(Theme.text)
+                            Text("Scegli un modello Qwen dalla barra laterale.\nAl primo avvio verrà scaricato da Hugging Face.")
+                                .font(Theme.mono(12))
+                                .foregroundStyle(Theme.secondary)
+                                .multilineTextAlignment(.center)
+                        }
                     }
                 }
             case .downloading(let fraction):
@@ -85,7 +90,7 @@ struct ChatView: View {
                 ApprovalPanel(request: approval) { engine.resolveApproval($0) }
             }
 
-            if engine.phase == .ready {
+            if engine.phase == .ready || (engine.phase == .idle && imageGen.isReady) {
                 inputBox
                 statusBar
             }
@@ -215,7 +220,7 @@ struct ChatView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     if engine.messages.isEmpty {
-                        WelcomeBanner(engine: engine)
+                        WelcomeBanner(engine: engine, imageGen: imageGen)
                             .padding(.top, 24)
                     }
                     ForEach(engine.messages) { message in
@@ -275,9 +280,11 @@ struct ChatView: View {
                 .foregroundStyle(Theme.accent)
 
             TextField(
-                engine.isAgentActive
-                    ? "chiedi qualcosa sul progetto o fai fare una modifica…"
-                    : "scrivi un messaggio…",
+                engine.phase != .ready && imageGen.isReady
+                    ? "/img descrizione dell'immagine da generare…"
+                    : (engine.isAgentActive
+                        ? "chiedi qualcosa sul progetto o fai fare una modifica…"
+                        : "scrivi un messaggio…"),
                 text: $draft, axis: .vertical
             )
             .textFieldStyle(.plain)
@@ -401,6 +408,14 @@ struct ChatView: View {
             return
         }
 
+        guard engine.phase == .ready else {
+            draft = ""
+            engine.appendNote(
+                user: trimmed,
+                note: "⚠️ nessun modello chat caricato: per conversare scegli un Qwen dalla sidebar. Con il modello immagine montato puoi generare con /img <descrizione>.")
+            return
+        }
+
         draft = ""
         attachedFiles = []
         engine.send(text, attachments: files)
@@ -424,6 +439,7 @@ struct ChatView: View {
 
 struct WelcomeBanner: View {
     var engine: QwenEngine
+    var imageGen: ImageGenManager? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -437,7 +453,10 @@ struct WelcomeBanner: View {
             }
             .padding(.bottom, 4)
 
-            infoLine("modello", engine.activeModel?.shortName ?? "—")
+            infoLine("modello", engine.activeModel?.shortName ?? "— (scegli dalla sidebar)")
+            if let imageGen, imageGen.isReady, case .ready(let model) = imageGen.state {
+                infoLine("immagini", "\(model) — genera con /img <descrizione>")
+            }
             infoLine(
                 "workspace",
                 engine.workspaceURL.map {
